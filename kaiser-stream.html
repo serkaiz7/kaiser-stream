@@ -1,0 +1,989 @@
+import React, { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react';
+
+/**
+ * =================================================================================================
+ * KaiserStream: A Feature-Rich Movie Streaming Single-Page Application
+ * =================================================================================================
+ *
+ * This file contains the complete React application for KaiserStream, a modern movie streaming website.
+ * It is designed as a single-file application for portability and ease of setup.
+ *
+ * Features:
+ * - Fully Responsive Design: Adapts seamlessly to desktops, tablets, and smartphones.
+ * - Dynamic Content: Fetches trending, latest, and popular content from The Movie Database (TMDb) API.
+ * - Custom Router: A simple yet effective page navigation system managed with React state.
+ * - Component-Based Architecture: Cleanly structured into pages, UI components, and icons.
+ * - State Management: Utilizes React Context for global state (authentication, watchlist, navigation).
+ * - User Authentication: A mock serial key system for user login.
+ * - Interactive UI: Includes carousels, modals, skeleton loaders, and a mobile-friendly menu.
+ * - Obfuscated Keys: API and serial keys are Base64 encoded to deter casual inspection.
+ *
+ * --- IMPORTANT NOTES FOR DEPLOYMENT & GITHUB ---
+ *
+ * 1.  **Security Warning:** The API key and serial keys are obfuscated using Base64 encoding.
+ * This is NOT true encryption and is not secure for a production build where the code is
+ * publicly accessible. For a real-world application, sensitive keys should be stored in
+ * backend environment variables and accessed via a secure API layer.
+ *
+ * 2.  **API Key:** The included TMDb API key is a publicly available key for development purposes.
+ * It is recommended to register for your own free key at https://www.themoviedb.org/.
+ *
+ * 3.  **Single-File Structure:** This project is intentionally built in a single file. For larger, more
+ * complex applications, it is standard practice to split components, hooks, and contexts
+ * into separate files and directories.
+ *
+ * 4.  **Valid Serial Keys for Testing:**
+ * - KS-2024-PREMIUM
+ * - KS-DEMO-USER-01
+ * - KAISER-MAX-ACCESS
+ *
+ * =================================================================================================
+ */
+
+
+// --- ENCRYPTED STATIC DATA & CONFIGURATION ---
+// WARNING: Base64 is for obfuscation, not true security. See notes above.
+const ENCRYPTED_API_KEY = 'ZjdkMDRiNTQxZjY5YmMxZjMyZDFjZGZkODFjMjUwOGU=';
+const ENCRYPTED_SERIALS = 'S1MtMjAyNC1QUkVNSVVNX18jI19fS1MtREVNTy1VU0VSLTAxX18jI19fS0FJU0VSLU1BWC1BQ0NFU1M=';
+
+// --- DECODER FUNCTION ---
+const decode = (str) => {
+    try {
+        // atob() is a standard browser function to decode Base64
+        return atob(str);
+    } catch (e) {
+        console.error("Failed to decode string:", e);
+        return '';
+    }
+};
+
+// --- DECODED CONFIGURATION ---
+const API_KEY = decode(ENCRYPTED_API_KEY);
+const API_URL = 'https://api.themoviedb.org/3';
+const IMAGE_URL = 'https://image.tmdb.org/t/p';
+const VALID_SERIAL_KEYS = new Set(decode(ENCRYPTED_SERIALS).split('__##__'));
+
+
+const genres = [
+    { id: 28, name: 'Action' },
+    { id: 12, name: 'Adventure' },
+    { id: 16, name: 'Animation' },
+    { id: 35, name: 'Comedy' },
+    { id: 80, name: 'Crime' },
+    { id: 99, name: 'Documentary' },
+    { id: 18, name: 'Drama' },
+    { id: 10751, name: 'Family' },
+    { id: 14, name: 'Fantasy' },
+    { id: 36, name: 'History' },
+    { id: 27, name: 'Horror' },
+    { id: 10402, name: 'Music' },
+    { id: 9648, name: 'Mystery' },
+    { id: 10749, name: 'Romance' },
+    { id: 878, name: 'Science Fiction' },
+    { id: 10770, name: 'TV Movie' },
+    { id: 53, name: 'Thriller' },
+    { id: 10752, name: 'War' },
+    { id: 37, name: 'Western' },
+    { id: 10759, name: 'Action & Adventure' },
+    { id: 10765, name: 'Sci-Fi & Fantasy' },
+];
+
+const SERVERS = [
+    { name: 'AutoEmbed', movieUrl: 'https://player.autoembed.cc/embed/movie/{id}', tvUrl: 'https://player.autoembed.cc/embed/tv/{id}/{season}/{episode}' },
+    { name: 'VidSrc', movieUrl: 'https://vidsrc.xyz/embed/movie/{id}', tvUrl: 'https://vidsrc.xyz/embed/tv/{id}/{season}-{episode}' },
+    { name: '2Embed', movieUrl: 'https://www.2embed.cc/embed/movie?tmdb_id={id}', tvUrl: 'https://www.2embed.cc/embed/tv?tmdb_id={id}&s={season}&e={episode}' },
+];
+
+// --- CONTEXT for Global State (Auth, Watchlist, Navigation) ---
+const AppContext = createContext();
+
+// --- API HELPER ---
+const fetchFromTMDB = async (endpoint) => {
+    try {
+        // Construct the full API URL with the decoded API key
+        const url = `${API_URL}/${endpoint}${endpoint.includes('?') ? '&' : '?'}api_key=${API_KEY}&language=en-US`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        return await response.json();
+    } catch (error) {
+        console.error("Error fetching from TMDB:", error);
+        return null; // Return null on error to prevent crashes in components
+    }
+};
+
+// --- SVG & ICON COMPONENTS ---
+const KaiserStreamLogo = () => (
+    <div className="flex items-center space-x-2 cursor-pointer" style={{ fontFamily: "'Exo 2', sans-serif" }}>
+        <svg width="40" height="40" viewBox="0 0 220 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="logo-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style={{ stopColor: '#4F46E5', stopOpacity: 1 }} />
+                    <stop offset="100%" style={{ stopColor: '#A855F7', stopOpacity: 1 }} />
+                </linearGradient>
+                <filter id="logo-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="10" result="coloredBlur" />
+                    <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+            </defs>
+            <path d="M110 0L202.829 55V165L110 220L17.1712 165V55L110 0Z" fill="url(#logo-gradient)" filter="url(#logo-glow)" />
+            <path d="M65 65L110 90L155 65M110 90V155L65 130M110 155L155 130" stroke="rgba(255, 255, 255, 0.8)" strokeWidth="12" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="110" cy="110" r="100" stroke="rgba(168, 85, 247, 0.3)" strokeWidth="8" fill="none" />
+        </svg>
+        <span className="text-2xl lg:text-3xl font-bold tracking-wider text-white">
+            Kaiser<span className="text-purple-400">Stream</span>
+        </span>
+    </div>
+);
+
+const SearchIcon = () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+    </svg>
+);
+
+const MenuIcon = () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16m-7 6h7"></path>
+    </svg>
+);
+
+const PlayIcon = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className || "h-10 w-10 text-white group-hover:text-purple-400 transition-colors"} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+    </svg>
+);
+
+const InfoIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+    </svg>
+);
+
+const StarIcon = () => (
+     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+    </svg>
+);
+
+const CloseIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+);
+
+
+// --- UI COMPONENTS ---
+
+const SkeletonLoader = ({ className }) => (
+    <div className={`animate-pulse bg-gray-800 rounded-md ${className}`}></div>
+);
+
+const MovieCard = ({ item }) => {
+    const { navigateTo } = useContext(AppContext);
+    const type = item.title ? 'movie' : 'tv';
+
+    return (
+        <div className="flex-shrink-0 w-36 sm:w-48 md:w-56 group cursor-pointer" onClick={() => navigateTo('detail', { type, id: item.id })}>
+            <div className="relative rounded-lg overflow-hidden transition-transform duration-300 transform group-hover:scale-105 group-hover:shadow-2xl group-hover:shadow-purple-500/20">
+                <img
+                    src={`${IMAGE_URL}/w500${item.poster_path}`}
+                    alt={item.title || item.name}
+                    className="w-full h-auto aspect-[2/3] object-cover bg-gray-800"
+                    loading="lazy"
+                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/500x750/111827/4F46E5?text=KaiserStream'; }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <PlayIcon />
+                </div>
+                <div className="absolute bottom-2 left-2 text-white text-xs p-1 bg-black/50 rounded flex items-center space-x-1">
+                    <StarIcon />
+                    <span>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</span>
+                </div>
+            </div>
+            <h3 className="text-white text-sm mt-2 truncate group-hover:text-purple-300">{item.title || item.name}</h3>
+            <p className="text-gray-400 text-xs">{(item.release_date || item.first_air_date || '').split('-')[0]}</p>
+        </div>
+    );
+};
+
+const MovieCarousel = ({ title, items, loading }) => {
+    if (loading) {
+        return (
+            <div className="mb-12">
+                <SkeletonLoader className="h-8 w-1/3 mb-4" />
+                <div className="flex space-x-4 overflow-hidden">
+                    {[...Array(6)].map((_, i) => (
+                         <div key={i} className="flex-shrink-0 w-36 sm:w-48 md:w-56">
+                            <SkeletonLoader className="w-full aspect-[2/3] rounded-lg" />
+                            <SkeletonLoader className="h-4 w-full mt-2" />
+                            <SkeletonLoader className="h-3 w-1/2 mt-1" />
+                        </div>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    if (!items || items.length === 0) return null;
+
+    return (
+        <div className="mb-12">
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4">{title}</h2>
+            <div className="flex overflow-x-auto space-x-4 sm:space-x-6 pb-4 -mx-4 px-4 sm:-mx-6 sm:px-6 custom-scrollbar">
+                {items.map(item => <MovieCard key={`${title}-${item.id}`} item={item} />)}
+            </div>
+        </div>
+    );
+};
+
+const Header = () => {
+    const { navigateTo, user, logout } = useContext(AppContext);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    const handleSearch = (e) => {
+        if (e.key === 'Enter' && searchTerm.trim() !== '') {
+            navigateTo('search', { query: searchTerm.trim() });
+            setSearchTerm('');
+            setIsMobileMenuOpen(false);
+        }
+    };
+
+    const handleMobileNav = (page, data) => {
+        navigateTo(page, data);
+        setIsMobileMenuOpen(false);
+    };
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    return (
+        <>
+            <header className="fixed top-0 left-0 right-0 z-50 bg-black/50 backdrop-blur-lg">
+                <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex items-center justify-between h-16 sm:h-20">
+                        <div className="flex items-center space-x-4 sm:space-x-8">
+                            <div onClick={() => navigateTo('home')}>
+                               <KaiserStreamLogo />
+                            </div>
+                            <nav className="hidden md:flex items-center space-x-6">
+                                <a onClick={() => navigateTo('home')} className="text-gray-300 hover:text-white transition-colors cursor-pointer">Home</a>
+                                <a onClick={() => navigateTo('category', { type: 'movie' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer">Movies</a>
+                                <a onClick={() => navigateTo('category', { type: 'tv' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer">TV Series</a>
+                                <a onClick={() => navigateTo('category', { type: 'anime' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer">Anime</a>
+                            </nav>
+                        </div>
+                        <div className="flex items-center space-x-2 sm:space-x-4">
+                            <div className="hidden sm:block relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyDown={handleSearch}
+                                    className="bg-gray-800/50 border border-gray-700 text-white placeholder-gray-400 rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-purple-500 w-48 md:w-64 transition-all duration-300"
+                                />
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                                    <SearchIcon />
+                                </div>
+                            </div>
+                            {user ? (
+                                 <div className="relative" ref={dropdownRef}>
+                                    <button onClick={() => setIsDropdownOpen(prev => !prev)} className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg" aria-label="User menu">
+                                        {user.serial.charAt(0)}
+                                    </button>
+                                    <div className={`absolute top-full right-0 mt-2 w-48 bg-gray-800 rounded-md shadow-lg transition-all duration-200 ${isDropdownOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}>
+                                        <div className="py-1">
+                                            <a onClick={() => { navigateTo('watchlist'); setIsDropdownOpen(false); }} className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer">My Watchlist</a>
+                                            <a onClick={() => { logout(); setIsDropdownOpen(false); }} className="block px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer">Logout</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button onClick={() => navigateTo('login')} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full transition-colors hidden sm:block">
+                                    Login
+                                </button>
+                            )}
+                             <div className="md:hidden">
+                                <button onClick={() => setIsMobileMenuOpen(true)} className="text-white p-2" aria-label="Open mobile menu">
+                                    <MenuIcon />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+             {/* Mobile Menu */}
+            <div className={`fixed inset-0 z-[100] bg-gray-950/80 backdrop-blur-lg transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setIsMobileMenuOpen(false)}></div>
+            <div className={`fixed top-0 right-0 h-full w-64 bg-gray-900 z-[110] shadow-2xl transform transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+                <div className="p-4">
+                    <button onClick={() => setIsMobileMenuOpen(false)} className="text-white absolute top-4 right-4 p-2" aria-label="Close mobile menu"><CloseIcon /></button>
+                    <nav className="mt-16 flex flex-col space-y-4">
+                        <div className="relative sm:hidden">
+                            <input type="text" placeholder="Search..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} onKeyDown={handleSearch} className="w-full bg-gray-800 border border-gray-700 text-white placeholder-gray-400 rounded-full py-2 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><SearchIcon /></div>
+                        </div>
+                        <a onClick={() => handleMobileNav('home')} className="text-gray-300 hover:text-white transition-colors cursor-pointer text-lg p-2 rounded-md">Home</a>
+                        <a onClick={() => handleMobileNav('category', { type: 'movie' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer text-lg p-2 rounded-md">Movies</a>
+                        <a onClick={() => handleMobileNav('category', { type: 'tv' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer text-lg p-2 rounded-md">TV Series</a>
+                        <a onClick={() => handleMobileNav('category', { type: 'anime' })} className="text-gray-300 hover:text-white transition-colors cursor-pointer text-lg p-2 rounded-md">Anime</a>
+                        {!user && <a onClick={() => handleMobileNav('login')} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-full transition-colors text-center mt-4">Login</a>}
+                    </nav>
+                </div>
+            </div>
+        </>
+    );
+};
+
+const Footer = () => (
+    <footer className="bg-gray-900 border-t border-gray-800 mt-16">
+        <div className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 text-center text-gray-400">
+            <p>&copy; {new Date().getFullYear()} KaiserStream. All rights reserved.</p>
+        </div>
+    </footer>
+);
+
+const TrailerModal = ({ trailerKey, isOpen, onClose }) => {
+    if (!isOpen || !trailerKey) return null;
+
+    return (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center" onClick={onClose}>
+            <div className="relative w-full max-w-4xl aspect-video bg-black" onClick={(e) => e.stopPropagation()}>
+                <button onClick={onClose} className="absolute -top-10 right-0 text-white hover:text-purple-400 p-2" aria-label="Close trailer">
+                    <CloseIcon />
+                </button>
+                <iframe
+                    className="w-full h-full"
+                    src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&rel=0`}
+                    title="YouTube video player"
+                    frameBorder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                ></iframe>
+            </div>
+        </div>
+    );
+};
+
+// --- PAGE COMPONENTS ---
+
+const HomePage = () => {
+    const [trending, setTrending] = useState({ data: [], loading: true });
+    const [latestMovies, setLatestMovies] = useState({ data: [], loading: true });
+    const [tvSeries, setTvSeries] = useState({ data: [], loading: true });
+    const [heroItem, setHeroItem] = useState(null);
+    const { navigateTo } = useContext(AppContext);
+
+    useEffect(() => {
+        const fetchAll = async () => {
+            // Fetch all content concurrently for faster loading
+            const [trendingRes, moviesRes, tvRes] = await Promise.all([
+                fetchFromTMDB('trending/all/week'),
+                fetchFromTMDB('movie/now_playing'),
+                fetchFromTMDB('tv/popular')
+            ]);
+
+            setTrending({ data: trendingRes?.results || [], loading: false });
+            setLatestMovies({ data: moviesRes?.results || [], loading: false });
+            setTvSeries({ data: tvRes?.results || [], loading: false });
+
+            // Select a random item for the hero section and fetch its full details
+            if (trendingRes?.results?.length) {
+                const randomHero = trendingRes.results[Math.floor(Math.random() * Math.min(trendingRes.results.length, 10))];
+                const heroDetails = await fetchFromTMDB(`${randomHero.media_type}/${randomHero.id}`);
+                setHeroItem(heroDetails);
+            }
+        };
+        fetchAll();
+    }, []);
+    
+    const HeroSection = () => {
+        if (!heroItem) {
+            return (
+                 <div className="h-screen w-full flex items-center justify-center">
+                    <SkeletonLoader className="w-full h-full" />
+                 </div>
+            );
+        }
+        
+        const title = heroItem.title || heroItem.name;
+        const releaseYear = (heroItem.release_date || heroItem.first_air_date || '').split('-')[0];
+        const type = heroItem.title ? 'movie' : 'tv';
+
+        return (
+            <div className="relative h-[80vh] md:h-screen -mt-16 sm:-mt-20">
+                <div className="absolute inset-0">
+                    <img src={`${IMAGE_URL}/original${heroItem.backdrop_path}`} alt={title} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/70 to-transparent"></div>
+                </div>
+                <div className="relative z-10 h-full flex items-end pb-16 md:pb-24">
+                    <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="max-w-2xl text-white">
+                            <h1 className="text-3xl sm:text-4xl md:text-6xl font-bold mb-4">{title}</h1>
+                            <div className="flex items-center space-x-4 mb-4 text-gray-300">
+                                <span>{releaseYear}</span>
+                                <span className="flex items-center"><StarIcon />&nbsp;{heroItem.vote_average.toFixed(1)}</span>
+                                {heroItem.runtime && <span>{heroItem.runtime} min</span>}
+                            </div>
+                            <p className="line-clamp-2 sm:line-clamp-3 text-gray-200 mb-8">{heroItem.overview}</p>
+                            <div className="flex items-center space-x-4">
+                                <button
+                                    onClick={() => navigateTo('player', { type, id: heroItem.id })}
+                                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 sm:py-3 sm:px-8 rounded-full transition-transform hover:scale-105 flex items-center"
+                                >
+                                    <PlayIcon className="h-5 w-5 sm:h-6 sm:w-6 mr-2" />
+                                    <span>Play</span>
+                                </button>
+                                <button
+                                    onClick={() => navigateTo('detail', { type, id: heroItem.id })}
+                                    className="bg-gray-700/50 hover:bg-gray-700/80 text-white font-bold py-2 px-6 sm:py-3 sm:px-8 rounded-full transition-transform hover:scale-105 flex items-center backdrop-blur-sm"
+                                >
+                                    <InfoIcon />
+                                    More Info
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div>
+            <HeroSection />
+            <main className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <MovieCarousel title="Trending This Week" items={trending.data} loading={trending.loading} />
+                <MovieCarousel title="Latest Movies" items={latestMovies.data} loading={latestMovies.loading} />
+                <MovieCarousel title="Popular TV Series" items={tvSeries.data} loading={tvSeries.loading} />
+            </main>
+        </div>
+    );
+};
+
+const DetailPage = ({ type, id }) => {
+    const [details, setDetails] = useState(null);
+    const [credits, setCredits] = useState(null);
+    const [videos, setVideos] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const { user, watchlist, toggleWatchlist, navigateTo } = useContext(AppContext);
+
+    useEffect(() => {
+        const fetchData = async () => {
+            setLoading(true);
+            const [detailsRes, creditsRes, videosRes] = await Promise.all([
+                fetchFromTMDB(`${type}/${id}`),
+                fetchFromTMDB(`${type}/${id}/credits`),
+                fetchFromTMDB(`${type}/${id}/videos`),
+            ]);
+            setDetails(detailsRes);
+            setCredits(creditsRes);
+            setVideos(videosRes);
+            setLoading(false);
+        };
+        fetchData();
+    }, [type, id]);
+
+    if (loading) {
+        return (
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 min-h-screen">
+                <div className="flex flex-col md:flex-row gap-8">
+                    <SkeletonLoader className="w-full md:w-1/3 h-[60vh] rounded-lg" />
+                    <div className="w-full md:w-2/3">
+                        <SkeletonLoader className="h-12 w-3/4 mb-4" />
+                        <SkeletonLoader className="h-6 w-1/2 mb-6" />
+                        <SkeletonLoader className="h-24 w-full mb-6" />
+                        <SkeletonLoader className="h-10 w-48" />
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!details) return <div className="text-white text-center pt-32">Content not found.</div>;
+    
+    const trailer = videos?.results?.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+    const isInWatchlist = user && watchlist.some(item => item.id === details.id);
+
+    return (
+        <div className="text-white min-h-screen">
+            <TrailerModal trailerKey={trailer?.key} isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+            {/* Backdrop */}
+            <div className="relative h-[50vh] w-full -mt-16 sm:-mt-20">
+                <img src={`${IMAGE_URL}/original${details.backdrop_path}`} className="w-full h-full object-cover object-top" alt={`Backdrop for ${details.title || details.name}`}/>
+                <div className="absolute inset-0 bg-gradient-to-t from-gray-950 via-gray-950/80 to-transparent"></div>
+            </div>
+
+            {/* Content */}
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8 pb-16 relative -mt-24 sm:-mt-32">
+                <div className="flex flex-col md:flex-row gap-8 md:gap-12">
+                    <div className="w-2/3 sm:w-1/2 md:w-1/3 lg:w-1/4 flex-shrink-0 mx-auto">
+                         <img src={`${IMAGE_URL}/w500${details.poster_path}`} alt={details.title || details.name} className="rounded-lg shadow-2xl w-full" />
+                    </div>
+                    <div className="w-full md:w-2/3 lg:w-3/4 pt-4 md:pt-16">
+                        <h1 className="text-2xl sm:text-4xl md:text-5xl font-bold mb-2">{details.title || details.name}</h1>
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-gray-400 mb-6">
+                            <span>{(details.release_date || details.first_air_date || '').split('-')[0]}</span>
+                            <span className="flex items-center"><StarIcon />&nbsp;{details.vote_average?.toFixed(1)}</span>
+                            {details.runtime && <span>{Math.floor(details.runtime / 60)}h {details.runtime % 60}m</span>}
+                            {type === 'tv' && <span>{details.number_of_seasons} Season(s)</span>}
+                        </div>
+                        <div className="flex flex-wrap gap-2 mb-6">
+                            {details.genres?.map(g => <span key={g.id} className="bg-gray-800 text-gray-300 text-xs font-medium px-2.5 py-1 rounded-full">{g.name}</span>)}
+                        </div>
+                        <p className="text-gray-300 leading-relaxed mb-8">{details.overview}</p>
+
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            <button onClick={() => navigateTo('player', { type, id })} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-full flex items-center justify-center transition-transform hover:scale-105">
+                                <PlayIcon className="h-6 w-6 mr-2" />
+                                Play Now
+                            </button>
+                            {trailer && (
+                                <button onClick={() => setIsModalOpen(true)} className="bg-gray-700/50 hover:bg-gray-700/80 text-white font-bold py-3 px-6 rounded-full flex items-center justify-center transition-transform hover:scale-105">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" /></svg>
+                                    Watch Trailer
+                                </button>
+                            )}
+                            {user && (
+                                <button onClick={() => toggleWatchlist(details)} className={`border-2 ${isInWatchlist ? 'border-purple-500 text-purple-400' : 'border-gray-500 text-gray-300'} font-bold py-3 px-6 rounded-full flex items-center justify-center transition-all hover:scale-105 hover:border-purple-500 hover:text-purple-400`}>
+                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={isInWatchlist ? "M5 13l4 4L19 7" : "M12 4v16m8-8H4"} /></svg>
+                                    {isInWatchlist ? 'In Watchlist' : 'Add to Watchlist'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                 {/* Cast Section */}
+                {credits?.cast?.length > 0 && (
+                    <div className="mt-16">
+                        <h2 className="text-3xl font-bold mb-6">Cast</h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+                            {credits.cast.slice(0, 12).map(person => (
+                                <div key={person.credit_id} className="text-center">
+                                    <img src={person.profile_path ? `${IMAGE_URL}/w185${person.profile_path}` : 'https://placehold.co/185x278/111827/4F46E5?text=?'} alt={person.name} className="rounded-lg mb-2 w-full aspect-[2/3] object-cover bg-gray-800"/>
+                                    <p className="font-semibold text-white text-sm">{person.name}</p>
+                                    <p className="text-gray-400 text-xs">{person.character}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const CategoryPage = ({ type, genreId: initialGenreId }) => {
+    const [items, setItems] = useState([]);
+    const [page, setPage] = useState(1);
+    const [loading, setLoading] = useState(true);
+    const [hasMore, setHasMore] = useState(true);
+    const [genreId, setGenreId] = useState(initialGenreId || 'all');
+    const [sortBy, setSortBy] = useState('popularity.desc');
+
+    const fetchItems = useCallback(async (pageNum, genre, sort) => {
+        setLoading(true);
+        let endpoint;
+        const discoverType = type === 'anime' ? 'tv' : type;
+        
+        let params = `page=${pageNum}&sort_by=${sort}`;
+        if (genre !== 'all') {
+            params += `&with_genres=${genre}`;
+        }
+        if (type === 'anime') {
+            params += '&with_keywords=210024'; // Using keyword for Anime as TMDB doesn't have a dedicated type
+        }
+        
+        endpoint = `discover/${discoverType}?${params}`;
+
+        const data = await fetchFromTMDB(endpoint);
+        if (data?.results) {
+            setItems(prev => pageNum === 1 ? data.results : [...prev, ...data.results]);
+            setHasMore(data.page < data.total_pages);
+        } else {
+            setHasMore(false);
+        }
+        setLoading(false);
+    }, [type]);
+
+    useEffect(() => {
+        setItems([]);
+        setPage(1);
+        fetchItems(1, genreId, sortBy);
+    }, [genreId, sortBy, fetchItems]);
+
+    const loadMore = () => {
+        if (!loading && hasMore) {
+            const newPage = page + 1;
+            setPage(newPage);
+            fetchItems(newPage, genreId, sortBy);
+        }
+    };
+
+    const pageTitle = type === 'anime' ? 'Anime' : (type === 'movie' ? 'Movies' : 'TV Series');
+
+    return (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 min-h-screen">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-8">{pageTitle}</h1>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                 <select value={genreId} onChange={e => setGenreId(e.target.value)} className="bg-gray-800 border-gray-700 text-white rounded-md p-2 focus:ring-purple-500 focus:border-purple-500">
+                    <option value="all">All Genres</option>
+                    {genres.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                 <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="bg-gray-800 border-gray-700 text-white rounded-md p-2 focus:ring-purple-500 focus:border-purple-500">
+                    <option value="popularity.desc">Popularity</option>
+                    <option value="vote_average.desc">Rating</option>
+                    <option value="primary_release_date.desc">Release Date</option>
+                </select>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                {items.map(item => <MovieCard key={item.id} item={item} />)}
+                {loading && [...Array(12)].map((_, i) => (
+                    <div key={i}>
+                        <SkeletonLoader className="w-full aspect-[2/3] rounded-lg" />
+                        <SkeletonLoader className="h-4 w-full mt-2" />
+                    </div>
+                ))}
+            </div>
+
+            {hasMore && !loading && (
+                <div className="text-center mt-12">
+                    <button onClick={loadMore} className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full transition-colors">
+                        Load More
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const SearchResultsPage = ({ query }) => {
+    const [results, setResults] = useState([]);
+    const [loading, setLoading] = useState(true);
+
+     useEffect(() => {
+        const search = async () => {
+            setLoading(true);
+            const data = await fetchFromTMDB(`search/multi?query=${encodeURIComponent(query)}`);
+            // Filter out people from search results
+            setResults(data?.results?.filter(item => item.media_type !== 'person' && item.poster_path) || []);
+            setLoading(false);
+        };
+        if(query) search();
+    }, [query]);
+
+    return (
+         <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 min-h-screen">
+            <h1 className="text-2xl sm:text-3xl font-bold text-white mb-8">
+                Search results for: <span className="text-purple-400">"{query}"</span>
+            </h1>
+
+            {loading ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                    {[...Array(12)].map((_, i) => (
+                         <div key={i}>
+                            <SkeletonLoader className="w-full aspect-[2/3] rounded-lg" />
+                            <SkeletonLoader className="h-4 w-full mt-2" />
+                        </div>
+                    ))}
+                </div>
+            ) : results.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                    {results.map(item => <MovieCard key={item.id} item={item} />)}
+                </div>
+            ) : (
+                <p className="text-gray-400">No results found for your query.</p>
+            )}
+        </div>
+    );
+};
+
+const LoginPage = () => {
+    const [serial, setSerial] = useState('');
+    const [error, setError] = useState('');
+    const { login, navigateTo } = useContext(AppContext);
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const trimmedSerial = serial.trim();
+        if (VALID_SERIAL_KEYS.has(trimmedSerial)) {
+            setError('');
+            login({ serial: trimmedSerial });
+        } else {
+            setError('Invalid serial key. Please try again.');
+        }
+    };
+
+    return (
+        <div className="min-h-screen flex items-center justify-center pt-16 sm:pt-20 px-4">
+            <div className="bg-gray-900 p-8 rounded-lg shadow-2xl shadow-purple-500/10 w-full max-w-md">
+                <div className="text-center mb-8">
+                    <KaiserStreamLogo />
+                </div>
+                <h2 className="text-2xl font-bold text-center text-white mb-6">Enter Your Serial Key</h2>
+                <form onSubmit={handleSubmit} className="mb-4">
+                    <input
+                        type="text"
+                        value={serial}
+                        onChange={(e) => setSerial(e.target.value)}
+                        placeholder="Enter your serial key"
+                        className="w-full bg-gray-800 border border-gray-700 text-white rounded-md p-3 mb-4 focus:ring-purple-500 focus:border-purple-500"
+                    />
+                    {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
+                    <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-md transition-colors">
+                        Unlock KaiserStream
+                    </button>
+                </form>
+                <button onClick={() => navigateTo('home')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 rounded-md transition-colors">
+                    Back to Home
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
+const WatchlistPage = () => {
+    const { watchlist } = useContext(AppContext);
+
+    return (
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 pt-24 min-h-screen">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-8">My Watchlist</h1>
+            {watchlist.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
+                    {watchlist.map(item => <MovieCard key={item.id} item={item} />)}
+                </div>
+            ) : (
+                <p className="text-gray-400">Your watchlist is empty. Add some movies and shows!</p>
+            )}
+        </div>
+    );
+};
+
+const PlayerPage = ({ type, id, season = 1, episode = 1 }) => {
+    const [selectedServer, setSelectedServer] = useState(SERVERS[0]);
+    const playerContainerRef = useRef(null);
+
+    const embedUrl = (type === 'movie'
+        ? selectedServer.movieUrl.replace('{id}', id)
+        : selectedServer.tvUrl.replace('{id}', id).replace('{season}', season).replace('{episode}', episode)
+    );
+
+    const { navigateTo } = useContext(AppContext);
+
+    const handleDoubleClick = useCallback(() => {
+        const elem = playerContainerRef.current;
+        if (!elem) return;
+
+        // Toggles fullscreen mode for the entire player container
+        if (!document.fullscreenElement) {
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen().catch(err => console.error(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`));
+            } else if (elem.webkitRequestFullscreen) { /* Safari */
+                elem.webkitRequestFullscreen();
+            } else if (elem.msRequestFullscreen) { /* IE11 */
+                elem.msRequestFullscreen();
+            }
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
+        }
+    }, []);
+
+    return (
+        <div 
+            ref={playerContainerRef}
+            className="w-full h-screen bg-black flex flex-col fixed inset-0 z-[100]"
+        >
+            {/* These controls will be part of the fullscreen element */}
+            <div className="p-4 bg-gray-900 flex flex-col sm:flex-row items-center justify-between z-10 gap-4">
+                <div className="flex items-center gap-4">
+                    <button onClick={() => navigateTo('detail', { type, id })} className="text-white hover:text-purple-400 flex items-center flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                        Back
+                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {SERVERS.map(server => (
+                            <button
+                                key={server.name}
+                                onClick={() => setSelectedServer(server)}
+                                className={`px-3 py-1 text-sm font-semibold rounded-full transition-colors ${
+                                    selectedServer.name === server.name
+                                        ? 'bg-purple-600 text-white'
+                                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                }`}
+                            >
+                                {server.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                <div onClick={() => navigateTo('home')} className="hidden sm:block">
+                    <KaiserStreamLogo />
+                </div>
+            </div>
+            {/* The iframe is wrapped to attach the double-click handler */}
+            <div className="w-full h-full" onDoubleClick={handleDoubleClick}>
+                <iframe
+                    key={embedUrl}
+                    src={embedUrl}
+                    className="w-full h-full"
+                    frameBorder="0"
+                    title="KaiserStream Player"
+                    sandbox="allow-forms allow-pointer-lock allow-popups allow-same-origin allow-scripts allow-presentation"
+                    allow="autoplay; fullscreen; picture-in-picture"
+                    allowFullScreen={true}
+                ></iframe>
+            </div>
+        </div>
+    );
+};
+
+
+// --- MAIN APP COMPONENT ---
+function App() {
+    // State for navigation (custom router)
+    const [page, setPage] = useState('home');
+    const [pageData, setPageData] = useState({});
+    
+    // State for user authentication
+    const [user, setUser] = useState(null);
+    const [watchlist, setWatchlist] = useState([]);
+
+    // Effect to load user data and watchlist from localStorage on initial render
+    useEffect(() => {
+        try {
+            const storedUser = localStorage.getItem('ks_user');
+            const storedWatchlist = localStorage.getItem('ks_watchlist');
+            if (storedUser) {
+                setUser(JSON.parse(storedUser));
+            }
+            if (storedWatchlist) {
+                setWatchlist(JSON.parse(storedWatchlist));
+            }
+        } catch (e) {
+            console.error("Failed to parse from localStorage", e);
+            // Clear corrupted data
+            localStorage.removeItem('ks_user');
+            localStorage.removeItem('ks_watchlist');
+        }
+    }, []);
+    
+    // --- Context Functions ---
+    // Wrapped in useCallback to prevent unnecessary re-renders in child components
+    const login = useCallback((userData) => {
+        setUser(userData);
+        localStorage.setItem('ks_user', JSON.stringify(userData));
+        setPage('home');
+        setPageData({});
+    }, []);
+
+    const logout = useCallback(() => {
+        setUser(null);
+        setWatchlist([]);
+        localStorage.removeItem('ks_user');
+        localStorage.removeItem('ks_watchlist');
+        setPage('home');
+        setPageData({});
+    }, []);
+
+    const toggleWatchlist = useCallback((item) => {
+        setWatchlist(current => {
+            const isAdded = current.some(w => w.id === item.id);
+            let newWatchlist;
+            if (isAdded) {
+                newWatchlist = current.filter(w => w.id !== item.id);
+            } else {
+                newWatchlist = [...current, {id: item.id, title: item.title || item.name, poster_path: item.poster_path, media_type: item.media_type}];
+            }
+            localStorage.setItem('ks_watchlist', JSON.stringify(newWatchlist));
+            return newWatchlist;
+        });
+    }, []);
+    
+    const navigateTo = useCallback((newPage, data = {}) => {
+        setPage(newPage);
+        setPageData(data);
+        if (newPage !== 'player') {
+           window.scrollTo(0, 0);
+        }
+    }, []);
+
+    // Function to determine which page component to render
+    const renderPage = () => {
+        switch (page) {
+            case 'home':
+                return <HomePage />;
+            case 'detail':
+                return <DetailPage type={pageData.type} id={pageData.id} />;
+            case 'category':
+                return <CategoryPage type={pageData.type} />;
+             case 'search':
+                return <SearchResultsPage query={pageData.query} />;
+            case 'login':
+                 return <LoginPage />;
+            case 'watchlist':
+                 return user ? <WatchlistPage /> : <LoginPage />;
+            case 'player':
+                 return user ? <PlayerPage type={pageData.type} id={pageData.id} /> : <LoginPage />;
+            default:
+                return <HomePage />;
+        }
+    };
+    
+    // The value provided to all components wrapped by the context provider
+    const contextValue = {
+        navigateTo,
+        user,
+        login,
+        logout,
+        watchlist,
+        toggleWatchlist,
+    };
+
+    return (
+        <AppContext.Provider value={contextValue}>
+            <div className="bg-gray-950 min-h-screen text-gray-100">
+                <style>
+                    {`
+                        @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@700&display=swap');
+                        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+                        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4F46E5; border-radius: 4px; }
+                        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #6366F1; }
+                    `}
+                </style>
+                {page !== 'player' && <Header />}
+                <div className={page !== 'player' ? 'pt-16 sm:pt-20' : ''}>
+                   {renderPage()}
+                </div>
+                {page !== 'player' && <Footer />}
+            </div>
+        </AppContext.Provider>
+    );
+}
+
+export default App;
+
