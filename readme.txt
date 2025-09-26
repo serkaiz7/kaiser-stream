@@ -32,10 +32,7 @@
  * into separate files and directories.
  *
  * 4.  **Valid Serial Keys for Testing:**
- * - KS-2024-PREMIUM
  * - KS-DEMO-USER-01
- * - KAISER-MAX-ACCESS
- *
  * =================================================================================================
  */
 
