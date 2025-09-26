@@ -326,8 +326,23 @@
         };
         const LoginPage = () => {
             const [serial, setSerial] = useState(''); const [error, setError] = useState(''); const { login, navigateTo } = useContext(AppContext);
-            const handleSubmit = (e) => { e.preventDefault(); const trimmedSerial = serial.trim(); if (VALID_SERIAL_KEYS.has(trimmedSerial)) { setError(''); login({ serial: trimmedSerial }); } else { setError('Invalid serial key. Please try again.'); } };
-            return (<div className="min-h-screen flex items-center justify-center pt-16 sm:pt-20 px-4"><div className="bg-gray-900 p-8 rounded-lg shadow-2xl shadow-purple-500/10 w-full max-w-md"><div className="text-center mb-8"><KaiserStreamLogo /></div><h2 className="text-2xl font-bold text-center text-white mb-6">Enter Your Serial Key</h2><form onSubmit={handleSubmit} className="mb-4"><input type="text" value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Enter your serial key" className="w-full bg-gray-800 border border-gray-700 text-white rounded-md p-3 mb-4 focus:ring-purple-500 focus:border-purple-500" />{error && <p className="text-red-500 text-sm mb-4">{error}</p>}<button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-md transition-colors">Unlock KaiserStream</button></form>
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                const trimmedSerial = serial.trim();
+
+                if (trimmedSerial === 'KS-DEMO-USER-01' && localStorage.getItem('ks_demo_key_expired') === 'true') {
+                    setError('This demo key has already been used and has expired.');
+                    return;
+                }
+                
+                if (VALID_SERIAL_KEYS.has(trimmedSerial)) {
+                    setError('');
+                    login({ serial: trimmedSerial });
+                } else {
+                    setError('Invalid serial key. Please try again.');
+                }
+            };
+            return (<div className="min-h-screen flex items-center justify-center pt-16 sm:pt-20 px-4"><div className="bg-gray-900 p-8 rounded-lg shadow-2xl shadow-purple-500/10 w-full max-w-md"><div className="text-center mb-8"><KaiserStreamLogo /></div><h2 className="text-2xl font-bold text-center text-white mb-6">Enter Your Serial Key</h2><form onSubmit={handleSubmit} className="mb-4"><input type="text" value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Enter your serial key" className="w-full bg-gray-800 border border-gray-700 text-white rounded-md p-3 mb-2 focus:ring-purple-500 focus:border-purple-500" /><p className="text-xs text-gray-400 text-center mb-4">For a preview, <span onClick={() => setSerial('KS-DEMO-USER-01')} className="text-purple-400 hover:text-purple-300 font-semibold cursor-pointer">use the demo key</span>.</p>{error && <p className="text-red-500 text-sm mb-4">{error}</p>}<button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-md transition-colors">Unlock KaiserStream</button></form>
             <div className="my-6 text-center">
                 <a href="https://t.me/serkaiz7" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-gray-300 hover:text-purple-400 transition-colors duration-300 group">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="#2AABEE">
@@ -449,6 +464,7 @@
                                     localStorage.removeItem('ks_user');
                                     localStorage.removeItem('ks_watchlist');
                                     localStorage.removeItem('ks_demo_user_timestamp');
+                                    localStorage.setItem('ks_demo_key_expired', 'true');
                                     setUser(null);
                                     setWatchlist([]);
                                     return; // Stop execution to prevent setting the expired user
@@ -475,17 +491,6 @@
                 setPageData({}); 
             };
             const logout = () => { 
-                // Clean up demo key timestamp on logout
-                try {
-                    const storedUser = localStorage.getItem('ks_user');
-                    if(storedUser){
-                        const parsedUser = JSON.parse(storedUser);
-                        if (parsedUser.serial === 'KS-DEMO-USER-01') {
-                            localStorage.removeItem('ks_demo_user_timestamp');
-                        }
-                    }
-                } catch (e) { console.error("Error during logout cleanup:", e); }
-
                 setUser(null); 
                 setWatchlist([]); 
                 localStorage.removeItem('ks_user'); 
@@ -538,6 +543,8 @@
     </script>
 </body>
 </html>
+
+
 
 
 
